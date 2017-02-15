@@ -1,0 +1,25 @@
+{
+    "name": "zanderbaldwin/collect",
+    "description": "Collection library for generators in PHP",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Zander Baldwin",
+            "email": "hello@zanderbaldwin.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "ZanderBaldwin\\Collect\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ZanderBaldwin\\Collect\\Tests\\": "tests/"
+        }
+    },
+    "require": {
+        "php": ">=7.0"
+    }
+}
