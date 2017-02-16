@@ -1,11 +1,15 @@
-<?php declare(strict_types=1);
+<?php
 
 namespace ZanderBaldwin\Collect;
 
-class Collect
+class Collect implements \IteratorAggregate
 {
+    /** @var \Iterator  */
     private $input;
 
+    /**
+     * @param array|callable|\IteratorAggregate|\Iterator $input
+     */
     public function __construct($input)
     {
         if (is_callable($input)) {
@@ -15,7 +19,7 @@ class Collect
             }
             $this->input = call_user_func($input);
         } elseif (is_array($input)) {
-            $this->input = new \RecursiveArrayIterator($input);
+            $this->input = new \ArrayIterator($input);
         } elseif ($input instanceof \IteratorAggregate) {
             $this->input = $input->getIterator();
         } elseif ($input instanceof \Iterator) {
@@ -25,6 +29,9 @@ class Collect
         }
     }
 
+    /**
+     * Clone Collection
+     */
     public function __clone()
     {
         if (is_object($this->input)) {
@@ -32,8 +39,28 @@ class Collect
         }
     }
 
-    public function append($value, $key = null): Collect
+    /**
+     * Retrieve Wrapped Iterator
+     *
+     * @link  http://php.net/manual/en/iteratoraggregate.getiterator.php
+     * @return \Traversable
+     * @since 5.0.0
+     */
+    public function getIterator()
     {
+        return $this->input;
+    }
+
+    /**
+     * @param mixed $value
+     * @param scalar $key
+     * @return static
+     */
+    public function append($value, $key = null)
+    {
+        if ($key !== null && !is_scalar($key)) {
+            throw new \InvalidArgumentException('Element key is not scalar.');
+        }
         return new static(function () use ($value, $key) {
             foreach ($this->input as $collectionKey => $collectionValue) {
                 yield $collectionKey => $collectionValue;
@@ -46,13 +73,37 @@ class Collect
         });
     }
 
-    public function apply(callable $callback): Collect
+    /**
+     * @param callable $callback
+     * @return static
+     */
+    public function apply(callable $callback)
     {
-        return $callback($this);
+        $collection = call_user_func($callback, $this);
+        if (!$collection instanceof static) {
+            throw new \RuntimeException('Apply callback does not return a collection.');
+        }
+        return $collection;
     }
 
-    public function concat($items): Collect
+    /**
+     * @param callable $callback
+     * @return mixed
+     */
+    public function applyFlattening(callable $callback)
     {
+        return call_user_func($callback, $this);
+    }
+
+    /**
+     * @param \\Traversable|array $items
+     * @return static
+     */
+    public function concat($items)
+    {
+        if (!is_array($items) && !$items instanceof \Traversable) {
+            throw new \InvalidArgumentException('Items are not iterable.');
+        }
         return new static(function () use ($items) {
             foreach ($this->input as $key => $value) {
                 yield $key => $value;
@@ -63,7 +114,12 @@ class Collect
         });
     }
 
-    public function contains($value, bool $strict = false): Collect
+    /**
+     * @param mixed $value
+     * @param boolean $strict
+     * @return boolean
+     */
+    public function contains($value, $strict = false)
     {
         if ($strict) {
             foreach ($this->input as $collectionValue) {
@@ -81,7 +137,11 @@ class Collect
         return false;
     }
 
-    public function every(callable $callback): bool
+    /**
+     * @param callable $callback
+     * @return boolean
+     */
+    public function every(callable $callback)
     {
         foreach ($this->input as $key => $value) {
             if (!$callback($value, $key)) {
@@ -91,7 +151,11 @@ class Collect
         return true;
     }
 
-    public function filter(callable $callback): Collect
+    /**
+     * @param callable $callback
+     * @return static
+     */
+    public function filter(callable $callback)
     {
         return new static(function () use ($callback) {
             foreach ($this->input as $key => $value) {
@@ -102,6 +166,9 @@ class Collect
         });
     }
 
+    /**
+     * @return static
+     */
     public function filterNumeric()
     {
         return $this->filter(function ($value) {
@@ -109,7 +176,10 @@ class Collect
         });
     }
 
-    public function flip(): Collect
+    /**
+     * @return static
+     */
+    public function flip()
     {
         return new static(function () {
             foreach ($this->input as $key => $value) {
@@ -118,7 +188,10 @@ class Collect
         });
     }
 
-    public function isEmpty(): bool
+    /**
+     * @return boolean
+     */
+    public function isEmpty()
     {
         foreach ($this->input as $value) {
             return false;
@@ -126,12 +199,18 @@ class Collect
         return true;
     }
 
-    public function isNotEmpty(): bool
+    /**
+     * @return boolean
+     */
+    public function isNotEmpty()
     {
         return !$this->isEmpty();
     }
 
-    public function keys(): Collect
+    /**
+     * @return static
+     */
+    public function keys()
     {
         return new static(function () {
             foreach ($this->input as $key => $value) {
@@ -140,7 +219,23 @@ class Collect
         });
     }
 
-    public function map(callable $callback): Collect
+    /**
+     * @param integer $amount
+     * @return static
+     */
+    public function limit($amount)
+    {
+        if (!is_int($amount) || $amount < 0) {
+            throw new \InvalidArgumentException('Limit amount must be a positive integer.');
+        }
+        return $this->slice(0, $amount);
+    }
+
+    /**
+     * @param callable $callback
+     * @return static
+     */
+    public function map(callable $callback)
     {
         return new static(function () use ($callback) {
             foreach ($this->input as $key => $value) {
@@ -149,31 +244,50 @@ class Collect
         });
     }
 
-    public function max(): float
+    /**
+     * @param boolean $strict
+     * @return float|integer
+     */
+    public function max($strict = false)
     {
         $max = PHP_INT_MIN;
         foreach ($this->input as $value) {
-            if (!is_int($value) && !is_float($value)) {
+            if (is_int($value) || is_float($value)) {
+                $max = max($max, $value);
+                continue;
+            }
+            if ($strict) {
                 throw new \InvalidArgumentException('Collection contains a non-float value.');
             }
-            $max = max($max, $value);
         }
         return $max;
     }
 
-    public function min(): float
+    /**
+     * @param boolean $strict
+     * @return integer|float
+     */
+    public function min($strict = false)
     {
         $min = PHP_INT_MAX;
         foreach ($this->input as $value) {
-            if (!is_int($value) && !is_float($value)) {
+            if (is_int($value) || is_float($value)) {
+                $min = min($min, $value);
+                continue;
+            }
+            if ($strict) {
                 throw new \InvalidArgumentException('Collection contains a non-float value.');
             }
-            $min = min($min, $value);
         }
         return $min;
     }
 
-    public function prepend($value, $key = null): Collect
+    /**
+     * @param mixed $value
+     * @param scalar $key
+     * @return static
+     */
+    public function prepend($value, $key = null)
     {
         return new static(function () use ($value, $key) {
             if ($key !== null) {
@@ -187,6 +301,11 @@ class Collect
         });
     }
 
+    /**
+     * @param callable $callback
+     * @param mixed $initial
+     * @return mixed
+     */
     public function reduce(callable $callback, $initial = null)
     {
         foreach ($this->input as $key => $value) {
@@ -195,7 +314,13 @@ class Collect
         return $initial;
     }
 
-    public function replace($search, $replace, bool $strict = false): Collect
+    /**
+     * @param mixed $search
+     * @param mixed $replace
+     * @param boolean $strict
+     * @return static
+     */
+    public function replace($search, $replace, $strict = false)
     {
         return new static(function () use ($search, $replace, $strict) {
             if ($strict) {
@@ -218,7 +343,10 @@ class Collect
         });
     }
 
-    public function size(): int
+    /**
+     * @return integer
+     */
+    public function size()
     {
         $size = 0;
         foreach ($this->input as $value) {
@@ -227,22 +355,38 @@ class Collect
         return $size;
     }
 
-    public function slice(int $start, int $end): Collect
+    /**
+     * @param integer $start
+     * @param integer $end
+     * @return static
+     */
+    public function slice($start, $end)
     {
+        if (!is_int($start) || $start < 0) {
+            throw new \InvalidArgumentException('Start position is not a positive integer.');
+        }
+        if (!is_int($end) || $end < $start) {
+            throw new \InvalidArgumentException('End position is not an integer position after start position.');
+        }
         return new static(function () use ($start, $end) {
             $step = -1;
             foreach ($this->input as $key => $value) {
                 $step++;
+                if ($step >= $end) {
+                    break;
+                }
                 if ($step >= $start) {
                     yield $key => $value;
-                } elseif ($step >= $end) {
-                    break;
                 }
             }
         });
     }
 
-    public function some(callable $callback): bool
+    /**
+     * @param callable $callback
+     * @return boolean
+     */
+    public function some(callable $callback)
     {
         foreach ($this->input as $key => $value) {
             if ($callback($value, $key)) {
@@ -252,29 +396,30 @@ class Collect
         return false;
     }
 
-    public function sum(): float
+    /**
+     * @param boolean $strict
+     * @return float|integer
+     */
+    public function sum($strict = false)
     {
-        $total = 0;
+        $total = 0.0;
         foreach ($this->input as $value) {
-            if (!is_int($value) && !is_float($value)) {
-                throw new \InvalidArgumentException('Collection contains non-float value.');
+            if (is_int($value) || is_float($value)) {
+                $total += $value;
+                continue;
             }
-            $total += $value;
+            if ($strict) {
+                throw new \InvalidArgumentException('Collection contains non-numeric value type (must be integer or float).');
+            }
         }
         return $total;
     }
 
-    public function take(int $amount): Collect
+    /**
+     * @return array
+     */
+    public function toArray()
     {
-        return $this->slice(0, $amount);
-    }
-
-    public function toArray(): array
-    {
-        $array = [];
-        foreach ($this->input as $key => $value) {
-            $array[$key] = $value;
-        }
-        return $array;
+        return iterator_to_array($this->input);
     }
 }
